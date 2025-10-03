@@ -89,4 +89,4 @@ def page():
                         title="Machines",
                         subtitle="Current machines on site.",
                 )
-                    me.icon("factory")
+                    me.icon("FactoryRounded")

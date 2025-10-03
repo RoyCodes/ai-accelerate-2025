@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "amqtt>=0.11.3",
     "fastapi[standard]>=0.118.0",
     "httpx>=0.28.1",
     "mesop>=1.1.0",
