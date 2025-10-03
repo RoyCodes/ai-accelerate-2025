@@ -21,7 +21,7 @@ async def on_generate_button_click(event: me.ClickEvent):
     # call fastapi
     root_url = "http://localhost:8000"
     # root_url = "https://placeholder.com"
-    response = await client.get(f"{root_url}/api/generate")
+    response = await client.post(f"{root_url}/api/generate/start")
     state.button_label = response.text
     state.in_progress = False
 

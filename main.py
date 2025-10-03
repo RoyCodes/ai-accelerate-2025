@@ -3,6 +3,8 @@
 import mesop as me
 from fastapi import FastAPI
 from fastapi.middleware.wsgi import WSGIMiddleware
+import subprocess, sys
+from pathlib import Path
 
 # import Mesop page from UI folder
 import ui.home
@@ -10,10 +12,12 @@ import ui.home
 # Initialize FastAPI app
 app = FastAPI()
 
-
-@app.get("/api/generate")
-async def generate():
-    return {"message": "Hello from FastAPI!"}   
+@app.post("/api/generate/start")
+def generate_start():
+    # Start up generate.py
+    script = Path(__file__).resolve().parent / "api" / "generate.py"
+    subprocess.Popen([sys.executable, str(script)])
+    return {"message": "Generation started."}   
 
 app.mount(
     "/",
