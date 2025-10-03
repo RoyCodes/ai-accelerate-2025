@@ -1,13 +1,29 @@
 import mesop as me
+import httpx
 
 # Page State:
 
 @me.stateclass
 class State:
-   input: str = "awaiting click..."
+   button_label: str = "Generate"
+   in_progress: bool = False
 
 # Page Functions:
 
+async def on_generate_button_click(event: me.ClickEvent):
+   state = me.state(State)
+   if state.in_progress:
+      return
+   state.in_progress = True
+   state.button_label = "Generating..."
+
+   async with httpx.AsyncClient() as client:
+    # call fastapi
+    root_url = "http://localhost:8000"
+    # root_url = "https://placeholder.com"
+    response = await client.get(f"{root_url}/api/generate")
+    state.button_label = response.text
+    state.in_progress = False
 
 # Page Rendering:
 
@@ -30,10 +46,12 @@ def header():
     me.text("Hello, World!")
 
 def button():
+   state = me.state(State)
    me.button(
-      label="Click Me", 
+      label=state.button_label, 
       color="primary", 
       type="flat",
+      on_click=on_generate_button_click,
       )
 
 # Page Path and Tree:
@@ -71,3 +89,4 @@ def page():
                         title="Machines",
                         subtitle="Current machines on site.",
                 )
+                    me.icon("factory")

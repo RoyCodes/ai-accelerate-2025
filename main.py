@@ -11,12 +11,18 @@ import ui.home
 app = FastAPI()
 
 
+@app.get("/api/generate")
+async def generate():
+    return {"message": "Hello from FastAPI!"}   
+
 app.mount(
     "/",
     WSGIMiddleware(
         me.create_wsgi_app() 
     ),
 )
+
+
 
 # Run the app with Uvicorn
 if __name__ == "__main__":

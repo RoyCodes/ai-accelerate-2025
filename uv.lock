@@ -17,12 +17,14 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
+    { name = "httpx" },
     { name = "mesop" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.118.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "mesop", specifier = ">=1.1.0" },
 ]
 
