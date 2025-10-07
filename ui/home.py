@@ -117,27 +117,17 @@ def worker_card(data, idx: int):
 def page():
     s = me.state(State)
     with me.box(style=ROOT_BOX_STYLE):
-        header()
-        with me.box(style=me.Style(
-            background="grey",
-            width="min(800px, 100%)",
-            margin=me.Margin.symmetric(horizontal="auto", vertical=36),
-            padding=me.Padding.all(16),
-        )):
-            me.text("Hello from ai-accelerate-2025!")
-            button()
-            with me.box(style=me.Style(
-                display="flex",
-                flex_direction="row",
-                gap=16,
-                margin=me.Margin.all(15),
-                max_width=500,
-            )):
-                with me.card(appearance="raised"):
-                    me.card_header(title="Machines", subtitle="Current machines on site.")
-                    me.icon(icon="factory")
 
-        # Machines
+        # Header Section
+        with me.box(style=me.Style(
+            background="#fff",
+            padding=me.Padding.all(16),
+            border_radius=12,
+            margin=me.Margin.symmetric(horizontal="auto", vertical=12),
+            width="min(900px, 100%)",
+        )):header()
+
+        # Machines Section
         with me.box(style=me.Style(
             background="#fff",
             padding=me.Padding.all(16),
@@ -150,7 +140,7 @@ def page():
                 for i in range(SLOTS):
                     machine_card(s.machines[i], i)
 
-        # Workers
+        # Workers Section
         with me.box(style=me.Style(
             background="#fff",
             padding=me.Padding.all(16),
@@ -162,3 +152,12 @@ def page():
             with me.box(style=me.Style(display="flex", flex_direction="row", flex_wrap="wrap", gap=12)):
                 for i in range(SLOTS):
                     worker_card(s.workers[i], i)
+        
+        # Telemetry Section
+        with me.box(style=me.Style(
+            background="#fff",
+            padding=me.Padding.all(16),
+            border_radius=12,
+            margin=me.Margin.symmetric(horizontal="auto", vertical=12),
+            width="min(900px, 100%)",
+        )):button()
