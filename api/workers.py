@@ -1,4 +1,3 @@
-# workers.py (Python 3.13)
 from dataclasses import dataclass, field
 from typing import ClassVar, Self
 import uuid, random
@@ -123,7 +122,7 @@ def _random_schedule(*, day_bias: str | None = None) -> dict[str, str]:
         else:
             sched[d] = "Night"; workdays += 1
 
-    # ensure at least 3 workdays and at least 1 Off for demos
+    # ensure at least 3 workdays and at least 1 Off
     if workdays < 3:
         for d in DAYS:
             if sched[d] == "Off":
