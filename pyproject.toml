@@ -9,4 +9,6 @@ dependencies = [
     "fastapi[standard]>=0.118.0",
     "httpx>=0.28.1",
     "mesop>=1.1.0",
+    "paho-mqtt>=2.1.0",
+    "fivetran-connector-sdk>=2.2.1",
 ]

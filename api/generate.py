@@ -1,9 +1,3 @@
-# # generate.py
-# import time
-# print("generator started")
-# while True:
-#     print("tick"); time.sleep(2)
-
 import os, time, json, asyncio
 from amqtt.broker import Broker
 from amqtt.client import MQTTClient
