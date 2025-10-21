@@ -1,1 +1,2 @@
+fivetran-connector-sdk
 paho-mqtt
