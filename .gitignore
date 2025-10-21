@@ -11,3 +11,6 @@ wheels/
 
 # Fivetran test file
 fivetran_connector/files
+
+# VM environment files
+.env
