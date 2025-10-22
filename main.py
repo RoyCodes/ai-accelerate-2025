@@ -10,24 +10,14 @@ from pathlib import Path
 import ui.home
 
 # import your generators
-from api.machines import generate_new_machine
+from api.machines import router as machines_router
 from api.workers import generate_new_worker
 
 # Initialize FastAPI app
 app = FastAPI()
 
-# --- Start up aMQTT Telemetry Generator ---
-@app.post("/api/generate/start")
-def generate_start():
-    # Start up generate.py
-    script = Path(__file__).resolve().parent / "api" / "generate.py"
-    subprocess.Popen([sys.executable, str(script)])
-    return {"message": "Generation started."}   
-
 # ---- Generate a Machine ----
-@app.post("/api/machines/generate")
-def machines_generate():
-    return generate_new_machine() 
+app.include_router(machines_router, prefix="/api/machines", tags=["machines"])
 
 # ---- Generate a Worker ----
 @app.post("/api/workers/generate")
