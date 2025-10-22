@@ -12,6 +12,7 @@ wheels/
 # Fivetran test file
 fivetran_connector/files
 fivetran_connector/configuration.json
+vm/fivetran-bq-writer.key.json
 
 # VM environment files
 .env
