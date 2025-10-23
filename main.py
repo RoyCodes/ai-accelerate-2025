@@ -3,13 +3,12 @@
 import mesop as me
 from fastapi import FastAPI
 from fastapi.middleware.wsgi import WSGIMiddleware
-import subprocess, sys
-from pathlib import Path
+# import subprocess, sys
+# from pathlib import Path
 
 # import Mesop page from UI folder
 import ui.home
 
-# import your generators
 from api.machines import router as machines_router
 from api.workers import generate_new_worker
 

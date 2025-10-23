@@ -30,7 +30,19 @@ chmod +x deploy/01-factory-vm.sh
 ```
 
 4. get the IP of the running VM and try to connect via local MQTT client to sanity check
-
 ```bash
 mosquitto_sub -h $BROKER_IP -u demo -P demo123 -t "factory/#" -v
+```
+
+### Local Testing Notes:
+1. load Google env variables before starting up web server:
+```bash
+GOOGLE_CLOUD_PROJECT="$(gcloud config get-value project)" \
+GOOGLE_APPLICATION_CREDENTIALS="$PWD/api/app-bq-reader.key.json" \
+uv run python main.py
+```
+
+2. Sanity check BigQuery in a second terminal window:
+```bash
+curl -s "http://localhost:8000/api/machines/latest?minutes=120" | jq
 ```
