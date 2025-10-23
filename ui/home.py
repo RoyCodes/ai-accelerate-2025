@@ -115,23 +115,33 @@ def on_load(e: me.LoadEvent):
     # Force light mode (no dark/system toggle)
     me.set_theme_mode("light")
 
-def transform(user_input: str, history: list[mel.ChatMessage]):
+def _chat_context_snapshot():
     machines, workers, _ = _get_lists()
     live = [m for m in machines if m.get("ts")]
-    if not live:
+    return {
+        "machines": live[:6],             # keep small
+        "workers":  [w for w in workers if w][:8],
+    }
+
+def transform(user_input: str, history: list[mel.ChatMessage]):
+    snap = _chat_context_snapshot()
+    machines = snap["machines"]
+    if not machines:
         yield "I don’t see recent telemetry yet. Tap **Refresh telemetry** first.\n"
         return
 
-    max_pow = max((m.get("power_w") or 0) for m in live)
-    hottest = max(live, key=lambda m: (m.get("scrap_rate_pct") or 0))
+    # Short context line to ground the reply
+    yield f"_Context:_ {json.dumps(snap)[:1000]} …\n"
+
+    max_pow = max((m.get("power_w") or 0) for m in machines)
+    hottest = max(machines, key=lambda m: (m.get("scrap_rate_pct") or 0))
     yield "Okay, looking at the latest line data… "
     time.sleep(0.1)
     yield f"Peak power is about **{max_pow:.1f} W**. "
     time.sleep(0.1)
     yield f"Highest scrap right now: **{hottest['name']}** at **{(hottest.get('scrap_rate_pct') or 0):.2f}%**. "
     time.sleep(0.1)
-    available = [w for w in workers if w]
-    yield f"I see **{len(available)}** generated workers. Ask me to propose a maintenance slot and I’ll include a suggested assignee.\n"
+    yield f"I can propose maintenance windows or production tweaks based on that.\n"
 
 # ---------- UI (style) ----------
 PRIMARY = "#1a73e8"
@@ -140,6 +150,7 @@ BG_CARD = "#ffffff"
 TEXT_MUTED = "#6b7280"
 CARD_RADIUS = 12
 CARD_SHADOW = "0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.1)"
+CARD_HOVER  = "0 6px 20px rgba(16,24,40,.08)"
 GRID_MAX_W = "1200px"
 SECTION_GAP = 16
 
@@ -153,56 +164,35 @@ ROOT_BOX_STYLE = me.Style(
 
 # ---- Icon mapping (Material Symbols) ----
 ICON_COLORS = {
-    "mixer": "#7c3aed",      # purple
-    "kneader": "#2563eb",    # blue
-    "cutter": "#0ea5e9",     # sky
-    "oven": "#f97316",       # orange
-    "cooler": "#06b6d4",     # cyan
-    "packer": "#16a34a",     # green
-    "worker": "#1f2937",     # slate
-    "qa": "#ef4444",         # red
-    "electric": "#f59e0b",   # amber
-    "maint": "#22c55e",      # green
+    "mixer": "#7c3aed", "kneader": "#2563eb", "cutter": "#0ea5e9",
+    "oven": "#f97316", "cooler": "#06b6d4", "packer": "#16a34a",
+    "worker": "#1f2937", "qa": "#ef4444", "electric": "#f59e0b", "maint": "#22c55e",
 }
 
 def machine_icon(mtype: str) -> tuple[str, str]:
     m = (mtype or "").lower()
-    if "mixer" in m:
-        return ("blender", ICON_COLORS["mixer"])
-    if "kneader" in m:
-        return ("handyman", ICON_COLORS["kneader"])
-    if "cutter" in m:
-        return ("content_cut", ICON_COLORS["cutter"])
-    if "oven" in m:
-        return ("local_fire_department", ICON_COLORS["oven"])
-    if "cooler" in m:
-        return ("ac_unit", ICON_COLORS["cooler"])
-    if "packer" in m:
-        return ("inventory_2", ICON_COLORS["packer"])
-    return ("factory", "#475569")  # fallback
+    if "mixer" in m:   return ("blender", ICON_COLORS["mixer"])
+    if "kneader" in m: return ("handyman", ICON_COLORS["kneader"])
+    if "cutter" in m:  return ("content_cut", ICON_COLORS["cutter"])
+    if "oven" in m:    return ("local_fire_department", ICON_COLORS["oven"])
+    if "cooler" in m:  return ("ac_unit", ICON_COLORS["cooler"])
+    if "packer" in m:  return ("inventory_2", ICON_COLORS["packer"])
+    return ("factory", "#475569")
 
 def worker_icon(role: str) -> tuple[str, str]:
     r = (role or "").lower()
-    if "qa" in r:
-        return ("rule", ICON_COLORS["qa"])
-    if "electric" in r:
-        return ("electrical_services", ICON_COLORS["electric"])
-    if "maint" in r or "maintenance" in r:
-        return ("build", ICON_COLORS["maint"])
+    if "qa" in r:          return ("rule", ICON_COLORS["qa"])
+    if "electric" in r:    return ("electrical_services", ICON_COLORS["electric"])
+    if "maint" in r or "maintenance" in r: return ("build", ICON_COLORS["maint"])
     return ("person", ICON_COLORS["worker"])
 
 def header():
     with me.box(style=me.Style(
-        background=BG_CARD,
-        padding=me.Padding.all(20),
-        border_radius=CARD_RADIUS,
-        box_shadow=CARD_SHADOW,
+        background=BG_CARD, padding=me.Padding.all(20),
+        border_radius=CARD_RADIUS, box_shadow=CARD_SHADOW,
         margin=me.Margin.symmetric(horizontal="auto", vertical=16),
-        width=f"min({GRID_MAX_W}, 100%)",
-        display="flex",
-        align_items="center",
-        justify_content="space-between",
-        gap=12,
+        width=f"min({GRID_MAX_W}, 100%)", display="flex",
+        align_items="center", justify_content="space-between", gap=12,
     )):
         with me.box():
             me.text("Cookie Factory Copilot", style=me.Style(font_size=22, font_weight=700))
@@ -211,31 +201,24 @@ def header():
 
 def section(title: str):
     return me.box(style=me.Style(
-        background=BG_CARD,
-        padding=me.Padding.all(16),
-        border_radius=CARD_RADIUS,
-        box_shadow=CARD_SHADOW,
-        width="100%",
+        background=BG_CARD, padding=me.Padding.all(16),
+        border_radius=CARD_RADIUS, box_shadow=CARD_SHADOW, width="100%",
     ))
 
 def responsive_grid():
     return me.box(style=me.Style(
         margin=me.Margin.symmetric(horizontal="auto", vertical=8),
         width=f"min({GRID_MAX_W}, 100%)",
-        display="grid",
-        grid_template_columns="repeat(12, 1fr)",
-        gap=SECTION_GAP,
+        display="grid", grid_template_columns="repeat(12, 1fr)", gap=SECTION_GAP,
     ))
 
-def pill(label: str):
+def pill(label: str, bg: str = "#f0f4ff", fg: str = PRIMARY):
     me.text(
         label,
         style=me.Style(
             display="inline-block",
             padding=me.Padding.symmetric(horizontal=10, vertical=4),
-            border_radius=999,
-            background="#f0f4ff",
-            color=PRIMARY,
+            border_radius=999, background=bg, color=fg,
             font_family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace",
             font_size=12,
         ),
@@ -243,79 +226,79 @@ def pill(label: str):
 
 def skeleton_line(width="70%"):
     me.box(style=me.Style(
-        height="12px",
-        width=width,
-        border_radius=6,
-        background="#edf2f7",
-        margin=me.Margin.symmetric(vertical=6),
+        height="12px", width=width, border_radius=6,
+        background="#edf2f7", margin=me.Margin.symmetric(vertical=6),
     ))
 
 CARD_H = 168
 
 def machine_card(data: dict):
-    with me.card(appearance="raised", style=me.Style(
-        min_width=250, max_width=360, background=BG_CARD,
-        border_radius=CARD_RADIUS, box_shadow="none",
-        height=f"{CARD_H}px", display="flex", flex_direction="column",
-    )):
-        title = f"{data.get('name','Unknown')}"
-        mtype = f"{data.get('type','')}"
-        ident = data.get("machine_id","?")
-        me.card_header(title=title, subtitle=f"{mtype} • {ident}")
+    with me.box(style=me.Style(transition="box-shadow .15s ease")):
+        with me.card(appearance="raised", style=me.Style(
+            min_width=250, max_width=360, background=BG_CARD,
+            border_radius=CARD_RADIUS, box_shadow="none",
+            height=f"{CARD_H}px", display="flex", flex_direction="column",
+        )):
+            title = f"{data.get('name','Unknown')}"
+            mtype = f"{data.get('type','')}"
+            ident = data.get("machine_id","?")
+            me.card_header(title=title, subtitle=f"{mtype} • {ident}")
 
-        with me.card_content():
-            with me.box(style=me.Style(display="flex", gap=12, align_items="flex-start")):
-                icon_name, icon_color = machine_icon(mtype)
-                me.icon(icon=icon_name, style=me.Style(font_size=28, color=icon_color))
-                with me.box(style=me.Style(display="flex", flex_direction="column", gap=6)):
-                    if data.get("ts") is None:
-                        skeleton_line("60%"); skeleton_line("80%"); skeleton_line("50%")
-                    else:
-                        pill(f"Power {round(data.get('power_w') or 0, 1)} W")
-                        co2_val = data.get("co2_kg_per_min")
-                        pill(f"CO₂ {co2_val:.6f} kg/min" if isinstance(co2_val, (int, float)) else "CO₂ —")
-                        pill(f"Scrap {(data.get('scrap_rate_pct') or 0):.2f}%")
-            ts = data.get("ts")
-            me.text(f"ts: {ts if ts else 'waiting for latest…'}", style=me.Style(color=TEXT_MUTED, font_size=12))
+            with me.card_content():
+                with me.box(style=me.Style(display="flex", gap=12, align_items="flex-start")):
+                    icon_name, icon_color = machine_icon(mtype)
+                    me.icon(icon=icon_name, style=me.Style(font_size=28, color=icon_color))
+                    with me.box(style=me.Style(display="flex", flex_direction="column", gap=6)):
+                        if data.get("ts") is None:
+                            skeleton_line("60%"); skeleton_line("80%"); skeleton_line("50%")
+                        else:
+                            pill(f"Power {round(data.get('power_w') or 0, 1)} W")
+                            co2_val = data.get("co2_kg_per_min")
+                            pill(f"CO₂ {co2_val:.6f} kg/min" if isinstance(co2_val, (int, float)) else "CO₂ —")
+                            scrap = (data.get("scrap_rate_pct") or 0)
+                            scrap_bg = "#fee2e2" if scrap >= 1.0 else "#f0f4ff"
+                            scrap_fg = "#b91c1c" if scrap >= 1.0 else PRIMARY
+                            pill(f"Scrap {scrap:.2f}%", bg=scrap_bg, fg=scrap_fg)
+                ts = data.get("ts")
+                me.text(f"ts: {ts if ts else 'waiting for latest…'}", style=me.Style(color=TEXT_MUTED, font_size=12))
 
 WORKER_CARD_H = 156
 
 def worker_card(data, idx: int):
-    with me.card(appearance="raised", style=me.Style(
-        min_width=250, max_width=360, background=BG_CARD,
-        border_radius=CARD_RADIUS, box_shadow="none",
-        height=f"{WORKER_CARD_H}px", display="flex", flex_direction="column",
-    )):
-        if not data:
-            me.card_header(title="Unassigned", subtitle="Click to generate")
-            with me.card_content():
-                with me.box(style=me.Style(display="flex", gap=12, align_items="center")):
-                    me.box(style=me.Style(width="36px", height="36px", border_radius="50%", background="#eef2ff"))
-                    with me.box(style=me.Style(flex="1")):
-                        skeleton_line("50%"); skeleton_line("70%")
-                me.button("Generate", color="primary", on_click=WORKER_HANDLERS[idx])
-        else:
-            name = data.get("name", "Worker")
-            role = data.get("role", "Worker")
-            lvl  = data.get("level", 1)
-            me.card_header(title=name, subtitle=f"{role} • L{lvl}")
-            with me.card_content():
-                with me.box(style=me.Style(display="flex", gap=12, align_items="center")):
-                    icon_name, icon_color = worker_icon(role)
-                    me.icon(icon=icon_name, style=me.Style(font_size=28, color=icon_color))
-                    sched = data.get("schedule") or {}
-                    days_full = ["Monday","Tuesday","Wednesday","Thursday","Friday"]
-                    summary = ", ".join(f"{d[:3]}:{(sched.get(d,'Off') or 'Off')[0]}" for d in days_full)
-                    me.text(summary, style=me.Style(color=TEXT_MUTED))
+    with me.box(style=me.Style(transition="box-shadow .15s ease")):
+        with me.card(appearance="raised", style=me.Style(
+            min_width=250, max_width=360, background=BG_CARD,
+            border_radius=CARD_RADIUS, box_shadow="none",
+            height=f"{WORKER_CARD_H}px", display="flex", flex_direction="column",
+        )):
+            if not data:
+                me.card_header(title="Unassigned", subtitle="Click to generate")
+                with me.card_content():
+                    with me.box(style=me.Style(display="flex", gap=12, align_items="center")):
+                        me.box(style=me.Style(width="36px", height="36px", border_radius="50%", background="#eef2ff"))
+                        with me.box(style=me.Style(flex="1")):
+                            skeleton_line("50%"); skeleton_line("70%")
+                    me.button("Generate", color="primary", on_click=WORKER_HANDLERS[idx])
+            else:
+                name = data.get("name", "Worker")
+                role = data.get("role", "Worker")
+                lvl  = data.get("level", 1)
+                me.card_header(title=name, subtitle=f"{role} • L{lvl}")
+                with me.card_content():
+                    with me.box(style=me.Style(display="flex", gap=12, align_items="center")):
+                        icon_name, icon_color = worker_icon(role)
+                        me.icon(icon=icon_name, style=me.Style(font_size=28, color=icon_color))
+                        sched = data.get("schedule") or {}
+                        days_full = ["Monday","Tuesday","Wednesday","Thursday","Friday"]
+                        summary = ", ".join(f"{d[:3]}:{(sched.get(d,'Off') or 'Off')[0]}" for d in days_full)
+                        me.text(summary, style=me.Style(color=TEXT_MUTED))
 
 @me.page(
     path="/",
     title="Cookie Factory Copilot",
     on_load=on_load,
     stylesheets=[
-        # Inter
         "https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap",
-        # Material Symbols (outlined)
         "https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:FILL@0..1,GRAD@0..200,wght@100..700,opsz@24",
     ],
 )
