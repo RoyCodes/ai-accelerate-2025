@@ -1,9 +1,11 @@
-# ui/home.py (JSON-in-state variant)
+# ui/home.py
 import mesop as me
+import mesop.labs as mel
 from dataclasses import field
-import json, httpx
+import json, httpx, time
 
 root_url = "http://localhost:8000"
+
 MACHINE_ORDER = [
     ("mx-01", "Mixer 3000", "Mixer"),
     ("kn-02", "Kneader Pro", "Kneader"),
@@ -24,56 +26,57 @@ def _init_machines():
 @me.stateclass
 class State:
     status: str = ""
-    onload_done: bool = False 
+    onload_done: bool = False
+    rev: int = 0  # << force rerender hint
     machines_json: str = json.dumps(_init_machines())
-    workers_json: str = json.dumps([None for _ in range(WORKER_SLOTS)])
+    # use {} instead of None to avoid first-click weirdness
+    workers_json: str = json.dumps([{} for _ in range(WORKER_SLOTS)])
     w_loading_json: str = json.dumps([False] * WORKER_SLOTS)
 
 def _get_lists():
     s = me.state(State)
-    return json.loads(s.machines_json), json.loads(s.workers_json), json.loads(s.w_loading_json)
+    return (
+        json.loads(s.machines_json),
+        json.loads(s.workers_json),
+        json.loads(s.w_loading_json),
+    )
 
 def _set_lists(machines, workers, w_loading):
     s = me.state(State)
-    s.machines_json = json.dumps(machines)
-    s.workers_json = json.dumps(workers)
-    s.w_loading_json = json.dumps(w_loading)
+    # compact JSON (slight perf gain)
+    s.machines_json = json.dumps(machines, separators=(",", ":"))
+    s.workers_json = json.dumps(workers, separators=(",", ":"))
+    s.w_loading_json = json.dumps(w_loading, separators=(",", ":"))
+    s.rev += 1  # << ensure re-render even if strings happen to be identical
 
+# ---------- Actions ----------
 async def refresh_telemetry(evt: me.ClickEvent | None):
     s = me.state(State)
     s.status = "Loading latest telemetry…"
-
     async with httpx.AsyncClient(base_url=root_url, timeout=10) as client:
-        # Fetch telemetry from the API
         r = await client.get("/api/machines/latest?minutes=10")
         payload = r.json()
-
-        # If there are no items, update status and return early
-        if not payload.get("items"):
+        items = payload.get("items", [])
+        if not items:
             s.status = "No telemetry data found."
             return
 
-        data = payload.get("items", [])
-        by_id = {d["machine_id"]: d for d in data}
+        by_id = {d["machine_id"]: d for d in items}
+        machines, workers, w_loading = _get_lists()
 
-        # Update machines state with the new data
-        machines = json.loads(s.machines_json)  # Get current state
         for slot in machines:
             mid = slot["machine_id"]
             if mid in by_id:
                 d = by_id[mid]
-                # Hydrate the machine slot with fresh telemetry
                 slot["ts"] = d.get("ts")
                 slot["power_w"] = d.get("power_w")
                 slot["co2_kg_per_min"] = d.get("co2_kg_per_min")
                 slot["scrap_rate_pct"] = d.get("scrap_rate_pct")
 
-        # Persist updated machines state back into Mesop state
-        s.machines_json = json.dumps(machines)
+        _set_lists(machines, workers, w_loading)
+        s.status = f"Updated {len(items)} machine(s)"
 
-    s.status = f"Updated {len(data)} machine(s)"
-
-async def gen_worker(evt, idx):
+async def gen_worker(evt, idx: int):
     machines, workers, w_loading = _get_lists()
     if w_loading[idx]:
         return
@@ -93,34 +96,69 @@ async def gen_worker(evt, idx):
         w_loading[idx] = False
         _set_lists(machines, workers, w_loading)
 
-ROOT_BOX_STYLE = me.Style(background="#e7f2ff", height="100%", font_family="Inter", display="flex", flex_direction="column")
+# ---------- Chat ----------
+def on_load(e: me.LoadEvent):
+    me.set_theme_mode("system")
+
+def transform(user_input: str, history: list[mel.ChatMessage]):
+    s = me.state(State)
+    machines, workers, _ = _get_lists()
+    live = [m for m in machines if m.get("ts")]
+    if not live:
+        yield "I don’t see recent telemetry yet. Tap **Refresh telemetry** first.\n"
+        return
+
+    max_pow = max((m.get("power_w") or 0) for m in live)
+    hottest = max(live, key=lambda m: (m.get("scrap_rate_pct") or 0))
+    yield "Okay, looking at the latest line data… "
+    time.sleep(0.1)
+    yield f"Peak power is about **{max_pow:.1f} W**. "
+    time.sleep(0.1)
+    yield f"Highest scrap right now: **{hottest['name']}** at **{(hottest.get('scrap_rate_pct') or 0):.2f}%**. "
+    time.sleep(0.1)
+    available = [w for w in workers if w]
+    yield f"I see **{len(available)}** generated workers. Ask me to propose a maintenance slot and I’ll include a suggested assignee.\n"
+
+# ---------- UI ----------
+ROOT_BOX_STYLE = me.Style(
+    background="#e7f2ff",
+    height="100%",
+    font_family="Inter",
+    display="flex",
+    flex_direction="column",
+)
 
 def header():
     with me.box(style=me.Style(padding=me.Padding.all(16))):
         me.text("Cookie Factory Copilot", style=me.Style(font_size=20, font_weight=700))
         me.button("Refresh telemetry", color="primary", on_click=refresh_telemetry)
 
-def machine_card(data):
+def machine_card(data: dict):
     with me.card(appearance="raised", style=me.Style(min_width=240, background="#f7f7f7")):
-        me.card_header(title=f"{data['name']} ({data['machine_id']})", subtitle=data["type"])
+        me.card_header(title=f"{data.get('name','Unknown')} ({data.get('machine_id','?')})", subtitle=data.get("type",""))
         with me.card_content():
             me.icon(icon="factory")
             me.text(f"ts: {data.get('ts') or '—'}")
-            me.text(f"power_w: {data.get('power_w') if data.get('power_w') is not None else '—'}")
-            me.text(f"co2_kg_per_min: {data.get('co2_kg_per_min') if data.get('co2_kg_per_min') is not None else '—'}")
-            me.text(f"scrap_rate_pct: {data.get('scrap_rate_pct') if data.get('scrap_rate_pct') is not None else '—'}")
+            pw = data.get("power_w")
+            co2 = data.get("co2_kg_per_min")
+            scrap = data.get("scrap_rate_pct")
+            me.text(f"power_w: {pw if pw is not None else '—'}")
+            me.text(f"co2_kg_per_min: {co2 if co2 is not None else '—'}")
+            me.text(f"scrap_rate_pct: {scrap if scrap is not None else '—'}")
 
-def make_worker_click(idx):
+def make_worker_click(idx: int):
     async def _handler(evt):
         await gen_worker(evt, idx)
     return _handler
 
-def worker_card(data, idx):
+def worker_card(data, idx: int):
     with me.card(appearance="raised", style=me.Style(min_width=220, background="#f7f7f7")):
         if not data:
             me.button("Generate", color="primary", type="flat", on_click=make_worker_click(idx))
         else:
-            name = data.get("name", "Worker"); role = data.get("role", "Worker"); lvl = data.get("level", 1)
+            name = data.get("name", "Worker")
+            role = data.get("role", "Worker")
+            lvl = data.get("level", 1)
             me.card_header(title=name, subtitle=f"{role} • L{lvl}")
             with me.card_content():
                 me.icon(icon="person")
@@ -128,34 +166,53 @@ def worker_card(data, idx):
                 days = ["Monday","Tuesday","Wednesday","Thursday","Friday"]
                 me.text(", ".join(f"{d[:3]}:{(sched.get(d,'Off') or 'Off')[0]}" for d in days))
 
-@me.page(path="/", stylesheets=["https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap"])
+@me.page(
+    path="/",
+    title="Cookie Factory Copilot",
+    on_load=on_load,
+    stylesheets=["https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap"],
+)
 def page():
     s = me.state(State)
-
-    # On first render: kick off a telemetry refresh
     if not s.onload_done:
         s.onload_done = True
-        me.button("Init Refresh", style=me.Style(display="none"), on_click=refresh_telemetry)
+        # user still clicks "Refresh telemetry", but on-load state is now sound
+    machines, workers, _ = _get_lists()
 
-    machines, workers, w_loading = _get_lists()
     with me.box(style=ROOT_BOX_STYLE):
-        with me.box(style=me.Style(background="#fff", padding=me.Padding.all(16), border_radius=12,
-                                   margin=me.Margin.symmetric(horizontal="auto", vertical=12),
-                                   width="min(1000px, 100%)")):
+        # Header
+        with me.box(style=me.Style(
+            background="#fff", padding=me.Padding.all(16), border_radius=12,
+            margin=me.Margin.symmetric(horizontal="auto", vertical=12),
+            width="min(1100px, 100%)",
+        )):
             header()
             if s.status:
                 me.text(s.status)
-        with me.box(style=me.Style(background="#fff", padding=me.Padding.all(16), border_radius=12,
-                                   margin=me.Margin.symmetric(horizontal="auto", vertical=12),
-                                   width="min(1000px, 100%)")):
-            me.text("Machines", style=me.Style(font_weight=700, font_size=18))
-            with me.box(style=me.Style(display="flex", flex_direction="row", flex_wrap="wrap", gap=12)):
-                for m in machines:
-                    machine_card(m)
-        with me.box(style=me.Style(background="#fff", padding=me.Padding.all(16), border_radius=12,
-                                   margin=me.Margin.symmetric(horizontal="auto", vertical=12),
-                                   width="min(1000px, 100%)")):
-            me.text("Workers", style=me.Style(font_weight=700, font_size=18))
-            with me.box(style=me.Style(display="flex", flex_direction="row", flex_wrap="wrap", gap=12)):
-                for i in range(WORKER_SLOTS):
-                    worker_card(workers[i], i)
+
+        # Top: Machines | Workers
+        with me.box(style=me.Style(
+            display="flex", flex_direction="row", flex_wrap="wrap", gap=12,
+            margin=me.Margin.symmetric(horizontal="auto"),
+            width="min(1100px, 100%)",
+        )):
+            with me.box(style=me.Style(background="#fff", padding=me.Padding.all(16), border_radius=12,
+                                       flex="1 1 520px", min_width="520px")):
+                me.text("Machines", style=me.Style(font_weight=700, font_size=18))
+                with me.box(style=me.Style(display="flex", flex_direction="row", flex_wrap="wrap", gap=12)):
+                    for m in machines:
+                        machine_card(m)
+            with me.box(style=me.Style(background="#fff", padding=me.Padding.all(16), border_radius=12,
+                                       flex="1 1 520px", min_width="520px")):
+                me.text("Workers", style=me.Style(font_weight=700, font_size=18))
+                with me.box(style=me.Style(display="flex", flex_direction="row", flex_wrap="wrap", gap=12)):
+                    for i in range(WORKER_SLOTS):
+                        worker_card(workers[i], i)
+
+        # Bottom: chat
+        with me.box(style=me.Style(
+            background="#fff", padding=me.Padding.all(16), border_radius=12,
+            margin=me.Margin.symmetric(horizontal="auto", vertical=12),
+            width="min(1100px, 100%)",
+        )):
+            mel.chat(transform, title="Factory Copilot", bot_user="Copilot")
