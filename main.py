@@ -11,12 +11,16 @@ import ui.home
 
 from api.machines import router as machines_router
 from api.workers import generate_new_worker
+from api.ai import router as ai_router
 
 # Initialize FastAPI app
 app = FastAPI()
 
 # ---- Generate a Machine ----
 app.include_router(machines_router, prefix="/api/machines", tags=["machines"])
+
+# ---- AI Router ----
+app.include_router(ai_router)
 
 # ---- Generate a Worker ----
 @app.post("/api/workers/generate")

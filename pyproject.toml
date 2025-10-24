@@ -11,4 +11,6 @@ dependencies = [
     "mesop>=1.1.0",
     "paho-mqtt>=2.1.0",
     "fivetran-connector-sdk>=2.2.1",
+    "google-cloud-aiplatform>=1.122.0",
+    "google-cloud-bigquery>=3.38.0",
 ]
