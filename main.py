@@ -3,8 +3,6 @@
 import mesop as me
 from fastapi import FastAPI
 from fastapi.middleware.wsgi import WSGIMiddleware
-# import subprocess, sys
-# from pathlib import Path
 
 # import Mesop page from UI folder
 import ui.home

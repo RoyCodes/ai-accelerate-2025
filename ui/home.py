@@ -180,13 +180,8 @@ def _history_to_messages(history: list[mel.ChatMessage] | None):
 
 def transform(user_input: str, history: list[mel.ChatMessage]):
     """
-    Calls FastAPI route POST /api/ai/chat with:
-      { "prompt": <str>, "context": <snapshot>, "history": [ {role, content}, ... ] }
-
-    Streaming support:
-      - text/event-stream or text/plain: yield streaming lines
-      - application/json: {"chunks":[...]} or {"reply": "..."}
-      - fallback to raw text
+    Call POST /api/ai/chat and yield the reply in small chunks so the chat UI
+    doesn't clamp/truncate a single oversized message.
     """
     payload = {
         "prompt": user_input,
@@ -198,7 +193,8 @@ def transform(user_input: str, history: list[mel.ChatMessage]):
         with httpx.Client(base_url=root_url, timeout=60.0) as client:
             with client.stream("POST", "/api/ai/chat", json=payload) as resp:
                 if resp.status_code != 200:
-                    yield f"API error ({resp.status_code}): {resp.text[:300]}"
+                    snippet = resp.read().decode("utf-8", errors="ignore")[:300]
+                    yield f"API error ({resp.status_code}): {snippet}"
                     return
 
                 ctype = (resp.headers.get("content-type") or "").lower()
@@ -208,42 +204,57 @@ def transform(user_input: str, history: list[mel.ChatMessage]):
                     for raw in resp.iter_lines():
                         if not raw:
                             continue
-                        # normalize to str
-                        if isinstance(raw, (bytes, bytearray)):
-                            line = raw.decode("utf-8", errors="ignore")
-                        else:
-                            line = str(raw)
+                        line = raw.decode("utf-8", errors="ignore") if isinstance(raw, (bytes, bytearray)) else str(raw)
                         if line.startswith("data:"):
                             line = line[5:].lstrip()
                         if line:
-                            yield line
+                            yield line if line.endswith("\n") else line + "\n"
                     return
 
-                # Non-streaming: try JSON, then raw text
-                body_text = resp.text
-                try:
-                    data = resp.json()
-                    if isinstance(data, dict):
-                        chunks = data.get("chunks")
-                        if isinstance(chunks, list) and all(isinstance(c, str) for c in chunks):
-                            for ch in chunks:
-                                yield ch
-                            return
-                        reply = data.get("reply")
-                        if isinstance(reply, str):
-                            yield reply
-                            return
-                    yield json.dumps(data)[:1200]
-                    return
-                except Exception:
-                    if body_text:
-                        yield body_text[:2000]
-                        return
-                    yield "(empty response)"
-                    return
+                # Non-streaming: read once, then yield in chunks
+                body = resp.read().decode("utf-8", errors="ignore")
+
+        # Try JSON first
+        try:
+            data = json.loads(body)
+        except Exception:
+            data = None
+
+        if isinstance(data, dict):
+            err = (data.get("error") or "").strip()
+            if err:
+                yield f"Server error: {err[:900]}\n"
+                return
+            out = (data.get("output") or data.get("reply") or data.get("text") or data.get("content") or "").strip()
+            if out:
+                # Yield line-by-line to avoid UI truncation/clamping
+                for line in out.splitlines(True):  # keep line breaks
+                    # If a line is still very long, soft-split it
+                    while len(line) > 240:
+                        yield line[:240]
+                        line = line[240:]
+                    yield line
+                return
+            chunks = data.get("chunks")
+            if isinstance(chunks, list) and all(isinstance(c, str) for c in chunks):
+                for ch in chunks:
+                    yield ch if ch.endswith("\n") else ch + "\n"
+                return
+
+        # Fallback: show raw text in chunks
+        text = body or "(empty response)"
+        for line in text.splitlines(True):
+            while len(line) > 240:
+                yield line[:240]
+                line = line[240:]
+            yield line
 
     except Exception as e:
-        yield f"Request failed: {e}"
+        yield f"Request failed: {e}\n"
+
+
+
+
 
 
 # ---------- UI (style) ----------
