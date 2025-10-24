@@ -4,6 +4,8 @@ A lightweight end-to-end demo showing live factory telemetry flowing into Google
 
 ### Quick Overview
 
+Devpost link to project: https://devpost.com/software/industry-5-0-smart-cookie
+
 Live telemetry → MQTT (simulated cookie line: Mixer, Kneader, Cutter, Oven, Cooler, Packer)
 
 Ingest → Custom Fivetran Connector SDK pumps MQTT → BigQuery
